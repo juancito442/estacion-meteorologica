@@ -894,7 +894,15 @@ HTML_TEMPLATE = """
                 if(fill)fill.style.strokeDashoffset=offset;
                 if(valEl)animateNumber(valEl,parseFloat(valEl.innerText)||0,val,800,1);
             });
-            if(activeModalKey)updateModal();
+            if(activeModalKey){
+                updateModal();
+                // Actualizar sparkline del modal en tiempo real
+                if(sparkChartInst){
+                    sparkChartInst.data.datasets[0].data = sparkData[activeModalKey];
+                    sparkChartInst.data.labels = sparkData[activeModalKey].map((_,i)=>i);
+                    sparkChartInst.update('none');
+                }
+            }
             if(document.getElementById('analytics-page').classList.contains('active'))updateAnalytics();
         }catch(e){console.error(e);}
     }
@@ -913,14 +921,37 @@ HTML_TEMPLATE = """
         const m=metrics[key], val=currentData[key]||0, circ=2*Math.PI*85;
         let pct=Math.max(0,Math.min(1,(val-m.min)/(m.max-m.min)));
         const offset=circ-(pct*circ);
-        document.getElementById('modalRing').innerHTML=`<svg class="gauge-svg" viewBox="0 0 200 200" style="width:100%;height:100%;"><circle class="gauge-track" cx="100" cy="100" r="85"></circle><circle class="gauge-fill" cx="100" cy="100" r="85" stroke="${m.hex}" stroke-dasharray="${circ}" stroke-dashoffset="${offset}" style="filter:drop-shadow(0 0 10px ${m.hex})"></circle></svg><div class="gauge-center"><div class="gauge-value" style="font-size:52px">${val.toFixed(1)}</div><div class="gauge-unit">${m.unit}</div></div>`;
+        document.getElementById('modalRing').innerHTML=`<svg class="gauge-svg" viewBox="0 0 200 200" style="width:100%;height:100%;transform:rotate(-90deg)"><circle class="gauge-track" cx="100" cy="100" r="85"></circle><circle class="gauge-fill" id="modal-fill-circle" cx="100" cy="100" r="85" stroke="${m.hex}" stroke-dasharray="${circ}" stroke-dashoffset="${circ}" style="filter:drop-shadow(0 0 10px ${m.hex})"></circle></svg><div class="gauge-center"><div class="gauge-value" id="modal-gauge-value" style="font-size:52px">${val.toFixed(1)}</div><div class="gauge-unit">${m.unit}</div></div>`;
+        requestAnimationFrame(()=>{
+            requestAnimationFrame(()=>{
+                const circle=document.getElementById('modal-fill-circle');
+                if(circle) circle.style.strokeDashoffset=offset;
+            });
+        });
         updateModal(); drawSparkline(key); document.getElementById('preview-modal').classList.add('active');
     }
 
     function updateModal(){
-        if(!activeModalKey)return; const key=activeModalKey, val=currentData[key], logic=getLogic(key,val), m=metrics[key];
-        document.getElementById('modalStatus').innerText=logic.s; document.getElementById('modalStatus').style.color=m.hex;
-        const ul=document.getElementById('modalRecs'); ul.innerHTML=''; logic.r.forEach(r=>{ul.innerHTML+=`<li>${r}</li>`;});
+        if(!activeModalKey)return;
+        const key=activeModalKey, val=currentData[key], logic=getLogic(key,val), m=metrics[key];
+
+        // Actualizar valor numérico grande del modal con animación suave
+        const valEl = document.getElementById('modal-gauge-value');
+        if(valEl) animateNumber(valEl, parseFloat(valEl.innerText)||0, val, 800, 1);
+
+        // Actualizar círculo de progreso del modal
+        const circ=2*Math.PI*85;
+        let pct=Math.max(0,Math.min(1,(val-m.min)/(m.max-m.min)));
+        const offset=circ-(pct*circ);
+        const circle=document.getElementById('modal-fill-circle');
+        if(circle) circle.style.strokeDashoffset=offset;
+
+        // Actualizar estado y recomendaciones
+        document.getElementById('modalStatus').innerText=logic.s;
+        document.getElementById('modalStatus').style.color=m.hex;
+        const ul=document.getElementById('modalRecs');
+        ul.innerHTML='';
+        logic.r.forEach(r=>{ul.innerHTML+=`<li>${r}</li>`;});
     }
 
     function closeModal(e){
