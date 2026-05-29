@@ -178,9 +178,9 @@ HTML_TEMPLATE = """
         .portal-bg {
             position:fixed; inset:0; z-index:0;
             background:
-                radial-gradient(ellipse 120% 70% at 50% 110%, rgba(80,20,180,0.55) 0%, rgba(30,5,80,0.3) 40%, transparent 65%),
-                radial-gradient(ellipse 100% 50% at 50% 100%, rgba(50,10,140,0.4) 0%, transparent 55%),
-                linear-gradient(180deg, #06031a 0%, #04020e 50%, #030118 100%);
+                radial-gradient(ellipse 140% 80% at 50% 100%, rgba(100,30,220,0.5) 0%, rgba(40,10,100,0.25) 35%, transparent 60%),
+                radial-gradient(ellipse 120% 60% at 50% 100%, rgba(60,15,160,0.35) 0%, transparent 50%),
+                linear-gradient(180deg, #020108 0%, #050210 40%, #080318 100%);
         }
 
         /* ---- Hero text block ---- */
@@ -188,190 +188,286 @@ HTML_TEMPLATE = """
             position:relative; z-index:5;
             display:flex; flex-direction:column; align-items:center;
             text-align:center;
-            padding-top:clamp(16px,2.5vh,36px);
-            padding-bottom:0;
+            padding-top:clamp(20px,3vh,40px);
+            padding-bottom:clamp(10px,1.5vh,20px);
             gap:0;
         }
 
         .hero-badge {
             font-family:'JetBrains Mono',monospace;
             font-size:11px; letter-spacing:5px; text-transform:uppercase;
-            color:rgba(180,140,255,0.9);
-            border:1px solid rgba(139,92,246,0.35);
-            padding:7px 22px; border-radius:22px;
-            background:rgba(139,92,246,0.08);
-            backdrop-filter:blur(8px);
-            margin-bottom:clamp(14px,2.5vh,24px);
+            color:rgba(220,200,255,0.98);
+            border:1px solid rgba(139,92,246,0.55);
+            padding:8px 24px; border-radius:22px;
+            background:rgba(139,92,246,0.18);
+            backdrop-filter:blur(10px);
+            margin-bottom:clamp(16px,2.8vh,28px);
+            box-shadow:0 0 25px rgba(139,92,246,0.25), 0 0 50px rgba(6,182,212,0.1);
+            text-shadow:0 0 12px rgba(139,92,246,0.5);
         }
 
         .hero-title {
-            font-size:clamp(2rem,4.5vw,3.6rem);
+            font-size:clamp(2.2rem,5vw,4rem);
             font-weight:800; line-height:1.1; letter-spacing:-1px;
-            background:linear-gradient(135deg, #ffffff 0%, #e0d5ff 35%, #c4b5fd 60%, #06b6d4 100%);
+            background:linear-gradient(135deg, #ffffff 0%, #f0e8ff 30%, #d4c5ff 55%, #a080ff 80%, #06b6d4 100%);
             -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
-            margin-bottom:clamp(8px,1.5vh,16px);
+            margin-bottom:clamp(10px,1.8vh,18px);
+            /* Silhouette shadow to cut through the violet BH glow behind */
+            filter:drop-shadow(0 0 18px rgba(20,5,60,0.95))
+                   drop-shadow(0 0 35px rgba(20,5,60,0.80))
+                   drop-shadow(0 2px 6px rgba(0,0,0,0.7));
         }
 
         .hero-subtitle {
-            font-size:clamp(0.85rem,1.4vw,1.05rem);
-            color:rgba(160,140,210,0.85);
-            font-weight:400; letter-spacing:0.5px;
+            font-size:clamp(0.9rem,1.5vw,1.15rem);
+            /* Boosted opacity + luminance so it survives the bright halo */
+            color:rgba(230,210,255,1.0);
+            font-weight:600; letter-spacing:0.5px;
             margin-bottom:0;
+            text-shadow:
+                0 0 12px rgba(10,3,40,0.99),
+                0 0 28px rgba(10,3,40,0.85),
+                0 1px 4px rgba(0,0,0,0.8),
+                0 0 50px rgba(6,182,212,0.25);
         }
 
-        /* ---- Black hole scene ---- */
+        /* ================================================================
+           BLACK HOLE SCENE  — Estación MTR-01
+           Three-layer volumetric system:
+             L1  · Singularity     — pure black core
+             L2  · Accretion disc  — deformed ellipse in perspective
+             L3  · Gravitational lens — asymmetric posterior halo
+        ================================================================ */
+
+        /* ---- Wrapper & container ---- */
         .bh-wrapper {
             position:relative; z-index:3;
             display:flex; align-items:flex-start; justify-content:center;
             width:100%;
             flex-shrink:0;
-            height:clamp(260px, 42vh, 480px);
-            margin-top:clamp(-30px,-3vh,-10px);
+            height:clamp(300px, 50vh, 520px);
+            margin-top:clamp(-40px,-4vh,-15px);
+            overflow:visible;
         }
 
         .bh-container {
             position:relative;
-            width:clamp(260px,42vh,480px);
-            height:clamp(260px,42vh,480px);
+            width:clamp(300px,48vh,520px);
+            height:clamp(300px,48vh,520px);
             flex-shrink:0;
         }
 
-        /* Wide diffuse purple ambient haze behind the scene */
-        .bh-haze {
-            position:absolute; bottom:-20%; left:50%;
-            transform:translateX(-50%);
-            width:280%; height:135%;
-            background:radial-gradient(ellipse at 50% 10%,
-                rgba(140,30,255,0.62) 0%, rgba(100,12,230,0.36) 16%,
-                rgba(70,5,190,0.16)   32%, transparent 55%);
-            filter:blur(65px); pointer-events:none; z-index:0;
+        /* ================================================================
+           LAYER 3 — Gravitational Lens Posterior (ambient volume)
+           Wide nebular glow behind the singularity.
+           Asymmetric: thicker/brighter on the upper corona, thinner below.
+        ================================================================ */
+
+        /* Outer nebula — ultra-wide radial spread */
+        .bh-outer-nebula {
+            position:absolute;
+            /* Extend far beyond container so glow floods behind the data panel */
+            top:-60%; left:-55%; right:-55%; bottom:-35%;
+            border-radius:50%;
+            background:
+                radial-gradient(ellipse 80% 55% at 50% 52%,
+                    rgba(255,255,255,0.08)   0%,
+                    rgba(200,80,255,0.30)     8%,
+                    rgba(147,51,234,0.55)    18%,
+                    rgba(109,20,220,0.40)    30%,
+                    rgba(70,8,180,0.22)      45%,
+                    rgba(30,4,120,0.10)      60%,
+                    transparent              78%);
+            filter:blur(38px);
+            z-index:1; pointer-events:none;
+            animation:halouPulse 6s ease-in-out infinite;
         }
 
-        /* Outer corona - wide soft purple glow, no hard border */
-        .bh-corona {
-            position:absolute; inset:-22%; border-radius:50%;
-            background:transparent; border:none;
-            box-shadow:
-                0 0 60px 35px  rgba(130,25,255,0.30),
-                0 0 140px 80px rgba(90,8,210,0.16),
-                0 0 260px 145px rgba(60,3,175,0.08);
-            z-index:0; pointer-events:none;
-            animation:coronaPulse 5s ease-in-out infinite;
-        }
-
-        /* Atmospheric glow ring - NO hard border line, only soft halo */
-        .bh-glow-ring {
-            position:absolute; inset:1%; border-radius:50%;
-            background:transparent; border:none;
-            box-shadow:
-                0 0 15px 7px   rgba(210,145,255,0.82),
-                0 0 40px 20px  rgba(175,58,255,0.62),
-                0 0 80px 42px  rgba(128,18,242,0.42),
-                0 0 150px 75px rgba(90,7,212,0.24),
-                inset 0 0 24px 10px rgba(200,80,255,0.20);
+        /* Upper corona — heavier accumulation above the event horizon */
+        .bh-corona-top {
+            position:absolute;
+            top:-55%; left:-30%; right:-30%;
+            height:80%;
+            border-radius:50%;
+            /* Bright white core → vivid violet → midnight blue edge */
+            background:
+                radial-gradient(ellipse 70% 60% at 50% 78%,
+                    rgba(255,255,255,0.55)   0%,
+                    rgba(255,240,255,0.45)   4%,
+                    rgba(220,140,255,0.70)   10%,
+                    rgba(168,85,247,0.80)    20%,
+                    rgba(126,34,206,0.60)    34%,
+                    rgba(88,14,175,0.35)     50%,
+                    rgba(40,5,120,0.12)      68%,
+                    transparent              84%);
+            filter:blur(22px);
             z-index:2; pointer-events:none;
-            animation:accPulse 4s ease-in-out infinite;
+            animation:halouPulse 6s ease-in-out infinite 0.8s;
         }
 
-        /* Pure black event horizon shadow disc */
-        .bh-disc {
-            position:absolute; inset:7%; border-radius:50%;
-            background:#000000; z-index:4; pointer-events:none;
-        }
-
-        /* BOTTOM BLUR - diffuse purple fog covers lower half, absolutely no hard line */
-        .bh-bottom-blur {
-            position:absolute; top:44%; left:-3%; right:-3%;
-            height:60%; border-radius:0 0 54% 54%;
-            background:radial-gradient(ellipse at 50% 4%,
-                rgba(62,8,152,0.88) 0%,
-                rgba(48,5,135,0.60) 16%,
-                rgba(34,3,112,0.34) 34%,
-                rgba(20,1,84,0.14)  54%,
-                transparent 70%);
-            filter:blur(22px); z-index:5; pointer-events:none;
-        }
-
-        /* TOP ARC - gravitationally lensed far-side accretion disk bending OVER the top.
-           White dominant center, purple/violet halo framing it - the KEY realistic feature */
-        .bh-top-arc {
-            position:absolute; top:-9%; left:-6%; right:-6%;
-            height:57%;
-            border-radius:54% 54% 0 0 / 65% 65% 0 0;
-            background:radial-gradient(ellipse 88% 54% at 50% 100%,
-                rgba(255,255,255,1.00)  0%,
-                rgba(255,253,255,0.98)  1.5%,
-                rgba(246,206,255,0.91)  5.5%,
-                rgba(218,126,255,0.73)  13%,
-                rgba(170,58,255,0.45)   24%,
-                rgba(125,24,238,0.20)   38%,
-                rgba(84,8,200,0.06)     54%,
-                transparent             68%);
-            filter:blur(5.5px); z-index:6; pointer-events:none;
-            animation:accPulse 4s ease-in-out infinite;
-        }
-
-        /* Very faint equatorial transition - NOT a visible line, just soft diffuse glow */
-        .bh-equator-soft {
-            position:absolute; top:42%; left:-22%; right:-22%;
-            height:30px;
-            background:radial-gradient(ellipse at 50% 50%,
-                rgba(175,78,255,0.16) 0%, rgba(138,38,255,0.08) 52%, transparent 74%);
-            filter:blur(18px); z-index:7; pointer-events:none;
-        }
-
-        /* Photon ring - very faint atmospheric ring close to event horizon */
+        /* Inner photon halo — tight bright ring hugging the event horizon */
         .bh-photon-ring {
-            position:absolute; inset:11%; border-radius:50%;
-            background:transparent; border:none;
+            position:absolute; inset:5%; border-radius:50%;
+            background:transparent;
+            /* Stacked box-shadows for multi-layer glowing ring */
             box-shadow:
-                0 0 7px 2px   rgba(255,215,255,0.42),
-                0 0 18px 6px  rgba(196,82,255,0.28),
-                inset 0 0 10px 4px rgba(235,170,255,0.14);
-            z-index:6; pointer-events:none;
-            animation:photonPulse 3s ease-in-out infinite;
+                0 0  8px  3px rgba(255,245,255,0.90),
+                0 0 20px  8px rgba(240,180,255,0.70),
+                0 0 45px 18px rgba(200,90,255,0.50),
+                0 0 90px 40px rgba(160,50,255,0.28),
+                0 0 160px 80px rgba(120,20,240,0.14),
+                /* Slight upward bias — more light on top */
+                0 -12px 60px 30px rgba(200,100,255,0.22),
+                inset 0 0 30px 10px rgba(220,150,255,0.18);
+            z-index:9; pointer-events:none;
+            animation:photonPulse 4s ease-in-out infinite;
         }
 
-        /* ENTRAR button - absolutely positioned in bh-container, above all blur layers */
+        /* Bottom integration glow — bleeds into the data panel below */
+        .bh-bottom-glow {
+            position:absolute; bottom:-30%; left:-40%; right:-40%;
+            height:90%;
+            background:radial-gradient(ellipse 60% 40% at 50% 0%,
+                rgba(147,51,234,0.40)  0%,
+                rgba(109,20,220,0.22) 20%,
+                rgba(70,8,180,0.10)   38%,
+                transparent           60%);
+            filter:blur(55px);
+            z-index:0; pointer-events:none;
+        }
+
+        /* ================================================================
+           LAYER 1 — Singularity (Event Horizon Core)
+           Pure black circle. Hard edge = light trapped by gravity.
+           No solid border — the sharp cutoff IS the boundary.
+        ================================================================ */
+        .bh-disc {
+            position:absolute; inset:10%; border-radius:50%;
+            background:#000000;
+            border:none;
+            /* Subtle inward shadow gives very slight volumetric depth */
+            box-shadow:
+                inset 0 0 40px 15px rgba(60,10,140,0.18),
+                inset 0 0 80px 35px rgba(0,0,0,0.6);
+            z-index:10; pointer-events:none;
+        }
+
+        /* ================================================================
+           LAYER 2 — Accretion Disc (Deformed Ellipse in 3-D Perspective)
+           Simulates ~15-20° tilt angle. Light wraps around the singularity:
+             • Rear arc  — thin band visible above/behind the core (::before)
+             • Front arc — bright ellipse crossing the lower half (::after)
+           No straight horizontal line — all geometry is curved.
+        ================================================================ */
+
+        /* Container for the two disc arcs */
+        .bh-disc-ring {
+            position:absolute;
+            /* Centre the ring on the BH container */
+            top:50%; left:50%;
+            width:105%; height:34%;
+            transform:translate(-50%, -20%) rotateX(0deg);
+            z-index:11; pointer-events:none;
+        }
+
+        /* ── Rear arc (passes behind the singularity, visible at top) ── */
+        .bh-disc-ring::before {
+            content:'';
+            position:absolute;
+            top:0; left:0; right:0;
+            height:100%;
+            border-radius:50%;
+            /* Thin ellipse border — only top half visible (bottom masked by disc) */
+            border:3px solid transparent;
+            border-top:3px solid rgba(180,100,255,0.0);
+            /* We fake the rear arc with a gradient oval */
+            background:
+                radial-gradient(ellipse 100% 38% at 50% 0%,
+                    rgba(255,255,255,0.28)   0%,
+                    rgba(210,140,255,0.55)    5%,
+                    rgba(168,85,247,0.45)    15%,
+                    rgba(130,50,240,0.20)    28%,
+                    transparent              48%);
+            filter:blur(5px);
+            opacity:0.85;
+            animation:accPulse 5s ease-in-out infinite;
+        }
+
+        /* ── Front arc (bright band crossing the lower half of the disc) ── */
+        .bh-disc-ring::after {
+            content:'';
+            position:absolute;
+            /* Positioned to intersect the lower portion of the singularity */
+            bottom:-18%; left:-4%; right:-4%;
+            height:68%;
+            border-radius:50%;
+            /* White-hot centre → electric violet → transparent edges */
+            background:
+                radial-gradient(ellipse 60% 45% at 50% 14%,
+                    rgba(255,255,255,1.00)   0%,
+                    rgba(255,255,255,0.97)   2%,
+                    rgba(255,248,255,0.88)   5%,
+                    rgba(240,200,255,0.72)   11%,
+                    rgba(210,130,255,0.52)   20%,
+                    rgba(168,85,247,0.32)    31%,
+                    rgba(120,40,240,0.15)    44%,
+                    rgba(80,15,200,0.05)     58%,
+                    transparent              72%),
+                /* Left-side fade */
+                linear-gradient(90deg,
+                    transparent              0%,
+                    rgba(147,51,234,0.12)   12%,
+                    transparent             25%,
+                    transparent             75%,
+                    rgba(147,51,234,0.12)   88%,
+                    transparent            100%);
+            filter:blur(3.5px);
+            animation:accPulse 5s ease-in-out infinite 0.4s;
+        }
+
+        /* ===== ENTRAR button — always on top of all effects ===== */
         .bh-enter-btn {
             position:absolute; top:50%; left:50%;
-            transform:translate(-50%, -68%);
-            z-index:9;
+            transform:translate(-50%, -50%);
+            z-index:50; /* Well above all BH layers */
             font-family:'JetBrains Mono',monospace;
             font-size:10px; letter-spacing:6px; text-transform:uppercase;
-            color:rgba(220,200,255,0.68);
-            background:rgba(0,0,0,0.28); cursor:pointer;
+            color:rgba(220,200,255,0.75);
+            background:rgba(0,0,0,0.55); cursor:pointer;
             transition:all 0.5s ease; padding:7px 18px;
-            border-radius:40px; border:1px solid rgba(180,100,255,0.28);
+            border-radius:40px;
+            border:1px solid rgba(180,100,255,0.32);
+            backdrop-filter:blur(4px);
         }
         .bh-enter-btn:hover {
             color:rgba(255,240,255,1.0);
-            border-color:rgba(210,110,255,0.85); letter-spacing:9px;
-            text-shadow:0 0 22px rgba(225,100,255,1.0), 0 0 44px rgba(185,80,255,0.75);
-            box-shadow:0 0 30px rgba(205,80,255,0.42);
+            border-color:rgba(210,110,255,0.90);
+            letter-spacing:9px;
+            text-shadow:0 0 22px rgba(225,100,255,1.0), 0 0 44px rgba(185,80,255,0.80);
+            box-shadow:0 0 30px rgba(205,80,255,0.45);
         }
 
-        /* Thin orbital arcs */
+        /* ---- Thin orbital arcs ---- */
         .orbit-arc {
             position:absolute; border-radius:50%;
             border:1.5px solid transparent; pointer-events:none;
         }
         .orbit-arc.a1 {
             inset:-65px;
-            border-top-color:rgba(178,98,255,0.70);
-            border-right-color:rgba(6,215,255,0.45);
+            border-top-color:rgba(178,98,255,0.55);
+            border-right-color:rgba(6,215,255,0.38);
             animation:arcSpin 11s linear infinite;
-            filter:drop-shadow(0 0 8px rgba(178,98,255,0.55)); z-index:1;
+            filter:drop-shadow(0 0 8px rgba(178,98,255,0.45)); z-index:1;
         }
         .orbit-arc.a2 {
             inset:-100px;
-            border-bottom-color:rgba(6,215,255,0.55);
-            border-left-color:rgba(178,98,255,0.38);
+            border-bottom-color:rgba(6,215,255,0.48);
+            border-left-color:rgba(178,98,255,0.30);
             animation:arcSpin 17s linear infinite reverse;
-            filter:drop-shadow(0 0 6px rgba(6,215,255,0.38)); z-index:1;
+            filter:drop-shadow(0 0 6px rgba(6,215,255,0.32)); z-index:1;
         }
 
-        /* Floating particles */
+        /* ---- Floating particles ---- */
         .bh-particle {
             position:absolute; border-radius:50%;
             background:white; z-index:3; pointer-events:none;
@@ -381,13 +477,33 @@ HTML_TEMPLATE = """
         .bh-particle.p3 { width:2px;height:2px; background:#00e5ff; box-shadow:0 0 10px 2px #00e5ff; animation:orbPart 12s linear infinite -6s; }
         .bh-particle.p4 { width:3px;height:3px; background:#ce93d8; box-shadow:0 0 12px 3px #ce93d8; animation:orbPart 8s linear infinite -1.5s; }
 
-        @keyframes arcSpin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
-        @keyframes accPulse { 0%,100%{opacity:0.86} 50%{opacity:1.0} }
+        /* ---- Keyframes ---- */
+        @keyframes arcSpin    { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+        @keyframes accPulse   { 0%,100%{opacity:0.80} 50%{opacity:1.0} }
+        @keyframes halouPulse { 0%,100%{opacity:0.60} 50%{opacity:1.0} }
         @keyframes photonPulse {
-            0%,100%{opacity:0.55; box-shadow:0 0 7px 2px rgba(255,215,255,0.38), 0 0 18px 6px rgba(196,82,255,0.24), inset 0 0 10px 4px rgba(235,170,255,0.12)}
-            50%{opacity:1.0; box-shadow:0 0 12px 4px rgba(255,228,255,0.62), 0 0 28px 10px rgba(205,90,255,0.42), inset 0 0 16px 6px rgba(245,185,255,0.24)}
+            0%,100% {
+                opacity:0.60;
+                box-shadow:
+                    0 0  8px  3px rgba(255,245,255,0.65),
+                    0 0 22px  8px rgba(220,140,255,0.45),
+                    0 0 55px 22px rgba(180,70,255,0.22),
+                    0 0 110px 55px rgba(130,30,240,0.10),
+                    0 -12px 60px 30px rgba(200,100,255,0.14),
+                    inset 0 0 30px 10px rgba(220,150,255,0.12);
+            }
+            50% {
+                opacity:1.0;
+                box-shadow:
+                    0 0 12px  5px rgba(255,255,255,0.95),
+                    0 0 30px 12px rgba(240,190,255,0.75),
+                    0 0 75px 30px rgba(200,90,255,0.48),
+                    0 0 150px 75px rgba(160,50,255,0.22),
+                    0 -18px 80px 40px rgba(210,110,255,0.28),
+                    inset 0 0 40px 14px rgba(230,170,255,0.28);
+            }
         }
-        @keyframes coronaPulse { 0%,100%{opacity:0.62} 50%{opacity:1.0} }
+        @keyframes coronaPulse { 0%,100%{opacity:0.50} 50%{opacity:0.90} }
         @keyframes orbPart {
             from{transform:rotate(0deg) translateX(calc(50% + 60px)) rotate(0deg)}
             to{transform:rotate(360deg) translateX(calc(50% + 60px)) rotate(-360deg)}
@@ -640,18 +756,29 @@ HTML_TEMPLATE = """
 
     <!-- Black hole scene -->
     <div class="bh-wrapper">
-        <div class="bh-haze"></div>
         <div class="bh-container">
-            <div class="bh-corona"></div>
+            <!-- Layer 3: Gravitational lens / posterior halo (bottom-most, renders behind) -->
+            <div class="bh-bottom-glow"></div>
+            <div class="bh-outer-nebula"></div>
+            <div class="bh-corona-top"></div>
+
+            <!-- Thin orbital arcs -->
             <div class="orbit-arc a1"></div>
             <div class="orbit-arc a2"></div>
-            <div class="bh-glow-ring"></div>
-            <div class="bh-disc"></div>
-            <div class="bh-bottom-blur"></div>
-            <div class="bh-top-arc"></div>
-            <div class="bh-equator-soft"></div>
+
+            <!-- Layer 3 (inner): Photon ring hugging the event horizon -->
             <div class="bh-photon-ring"></div>
+
+            <!-- Layer 1: Singularity — pure black core -->
+            <div class="bh-disc"></div>
+
+            <!-- Layer 2: Accretion disc — deformed tilted ellipse (rear + front arcs via ::before / ::after) -->
+            <div class="bh-disc-ring"></div>
+
+            <!-- ENTRAR button — z-index:50 ensures full visibility & interaction -->
             <button class="bh-enter-btn" onclick="enterDashboard()">ENTRAR</button>
+
+            <!-- Floating orbital particles -->
             <div class="bh-particle p1"></div>
             <div class="bh-particle p2"></div>
             <div class="bh-particle p3"></div>
@@ -659,7 +786,7 @@ HTML_TEMPLATE = """
         </div>
     </div>
     <!-- Preview panel (calendar + sensor snapshot) - overlaps the glow like Reflect's UI preview -->
-    <div class="hero-preview">
+    <div class="hero-preview" style="margin-top:clamp(-50px,-6vh,-20px);">
         <div class="preview-panel">
             <div class="preview-panel-header">
                 <div class="preview-date" id="previewDateStr">Cargando...</div>
