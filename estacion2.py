@@ -1,12 +1,19 @@
 from flask import Flask, render_template_string, jsonify, request
-import random
 import time
-from threading import Thread
+from threading import Thread, Lock
 import sqlite3
 import os
 
 app = Flask(__name__)
+from flask_cors import CORS
+CORS(app)
 DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "mtr01.db")
+
+# ============================================================
+# CONFIGURACIÓN PARA ESP32
+# ============================================================
+# Si quieres una protección básica, descomenta y configura:
+# ESP32_API_KEY = "mtr01-secret-2024"   # <-- cámbialo por tu clave
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
@@ -37,7 +44,7 @@ def save_reading(data):
         conn.commit()
         conn.close()
     except Exception as e:
-        print("DB save error:", e)
+        print("[DB ERROR]", e)
 
 def get_last_reading():
     try:
@@ -52,7 +59,7 @@ def get_last_reading():
                 "uv": row[3], "lluvia": row[4], "viento": row[5]
             }
     except Exception as e:
-        print("DB read error:", e)
+        print("[DB READ ERROR]", e)
     return None
 
 def get_historial_db(metrica, limit=100):
@@ -64,9 +71,12 @@ def get_historial_db(metrica, limit=100):
         conn.close()
         return [r[0] for r in reversed(rows)]
     except Exception as e:
-        print("DB historial error:", e)
+        print("[DB HIST ERROR]", e)
     return []
 
+# ============================================================
+# ESTADO GLOBAL (thread-safe)
+# ============================================================
 sensor_data = {
     "temperatura": 18.44,
     "humedad": 62.00,
@@ -77,6 +87,7 @@ sensor_data = {
 }
 
 historial = {k: [] for k in sensor_data.keys()}
+data_lock = Lock()
 last_external_update = time.time()
 
 # Inicializar base de datos y restaurar última lectura
@@ -85,42 +96,30 @@ last = get_last_reading()
 if last:
     sensor_data.update(last)
 
-def mock_data_generator():
-    global last_external_update
-    while True:
-     if time.time() - last_external_update > 10:
-         sensor_data["temperatura"] += random.uniform(-0.5, 0.5)
-         sensor_data["humedad"] += random.uniform(-1.0, 1.0)
-         sensor_data["presion"] += random.uniform(-0.2, 0.2)
-         sensor_data["uv"] += random.uniform(-0.3, 0.3)
-         if random.random() > 0.8:
-            sensor_data["lluvia"] = random.uniform(10, 80)
-         else:
-            sensor_data["lluvia"] = max(0, sensor_data["lluvia"] - 5)
-         sensor_data["viento"] += random.uniform(-1.5, 1.5)
-         sensor_data["viento"] = max(0, min(100, sensor_data["viento"]))
-         sensor_data["temperatura"] = max(-10, min(50, sensor_data["temperatura"]))
-         sensor_data["humedad"] = max(0, min(100, sensor_data["humedad"]))
-         sensor_data["uv"] = max(0, min(15, sensor_data["uv"]))
-         for k in sensor_data:
-            historial[k].append(sensor_data[k])
-            if len(historial[k]) > 100:
-                historial[k].pop(0)
-         save_reading(sensor_data)
-         time.sleep(2)
+# ============================================================
+# ENDPOINTS API
+# ============================================================
 
-thread = Thread(target=mock_data_generator)
-thread.daemon = True
-thread.start()
+@app.route('/api/status', methods=['GET'])
+def api_status():
+    """Para que el ESP32 verifique conectividad."""
+    return jsonify({
+        "status": "online",
+        "server_time": time.time(),
+        "last_update": last_external_update,
+        "sensors": list(sensor_data.keys())
+    }), 200
 
 @app.route('/api/sensor-data', methods=['GET'])
 def get_data():
-    return jsonify(sensor_data)
+    with data_lock:
+        return jsonify(sensor_data)
 
 @app.route('/api/historial/<metrica>', methods=['GET'])
 def get_historial(metrica):
-    if metrica in historial and len(historial[metrica]) > 0:
-        return jsonify(historial[metrica])
+    with data_lock:
+        if metrica in historial and len(historial[metrica]) > 0:
+            return jsonify(historial[metrica])
     db_hist = get_historial_db(metrica)
     if db_hist:
         return jsonify(db_hist)
@@ -129,15 +128,51 @@ def get_historial(metrica):
 @app.route('/api/sensor-data', methods=['POST'])
 def post_data():
     global sensor_data, last_external_update
-    data = request.json
-    if data:
-        sensor_data.update(data)
+    data = request.get_json(silent=True)
+
+    if not data or not isinstance(data, dict):
+        return jsonify({"status": "error", "message": "JSON inválido o vacío"}), 400
+
+    # Validación de campos requeridos
+    required = ["temperatura", "humedad", "presion", "uv", "lluvia", "viento"]
+    missing = [f for f in required if f not in data]
+    if missing:
+        return jsonify({"status": "error", "message": f"Faltan campos: {missing}"}), 400
+
+    # Validación opcional de API key (descomenta si la usas)
+    # key = request.headers.get("X-API-Key")
+    # if key != ESP32_API_KEY:
+    #     return jsonify({"status": "error", "message": "Unauthorized"}), 401
+
+    try:
+        # Convertir a float y sanitizar
+        payload = {
+            "temperatura": float(data["temperatura"]),
+            "humedad":     float(data["humedad"]),
+            "presion":     float(data["presion"]),
+            "uv":          float(data["uv"]),
+            "lluvia":      float(data["lluvia"]),
+            "viento":      float(data["viento"]),
+        }
+    except (ValueError, TypeError) as e:
+        return jsonify({"status": "error", "message": f"Tipo de dato inválido: {e}"}), 400
+
+    with data_lock:
+        sensor_data.update(payload)
         last_external_update = time.time()
-        save_reading(sensor_data)
+        for k in sensor_data:
+            historial[k].append(sensor_data[k])
+            if len(historial[k]) > 100:
+                historial[k].pop(0)
+
+    save_reading(sensor_data)
+    print(f"[ESP32] Datos recibidos: {payload}")
     return jsonify({"status": "success", "data": sensor_data}), 200
 
+# ============================================================
+# HTML TEMPLATE (sin cambios visuales)
+# ============================================================
 HTML_TEMPLATE = """
-
 <!DOCTYPE html>
 <html lang="es">
 <head>
@@ -162,7 +197,6 @@ HTML_TEMPLATE = """
         body { font-family:'Syne',sans-serif; background:var(--bg); color:var(--text); overflow-x:hidden; min-height:100vh; }
         ::-webkit-scrollbar{width:6px} ::-webkit-scrollbar-track{background:var(--bg)} ::-webkit-scrollbar-thumb{background:rgba(139,92,246,0.4);border-radius:3px}
 
-        /* ========== PORTAL / HERO ========== */
         #portal-screen {
             position:fixed; inset:0; z-index:1000;
             display:flex; flex-direction:column; align-items:center;
@@ -171,10 +205,8 @@ HTML_TEMPLATE = """
         }
         #portal-screen.hidden { opacity:0; pointer-events:none; transform:scale(1.04); }
 
-        /* Starfield canvas */
         #starCanvas { position:fixed; inset:0; z-index:0; pointer-events:none; }
 
-        /* Background gradient - dark navy-purple like Reflect */
         .portal-bg {
             position:fixed; inset:0; z-index:0;
             background:
@@ -183,7 +215,6 @@ HTML_TEMPLATE = """
                 linear-gradient(180deg, #020108 0%, #050210 40%, #080318 100%);
         }
 
-        /* ---- Hero text block ---- */
         .hero-text-block {
             position:relative; z-index:5;
             display:flex; flex-direction:column; align-items:center;
@@ -212,7 +243,6 @@ HTML_TEMPLATE = """
             background:linear-gradient(135deg, #ffffff 0%, #f0e8ff 30%, #d4c5ff 55%, #a080ff 80%, #06b6d4 100%);
             -webkit-background-clip:text; -webkit-text-fill-color:transparent; background-clip:text;
             margin-bottom:clamp(10px,1.8vh,18px);
-            /* Silhouette shadow to cut through the violet BH glow behind */
             filter:drop-shadow(0 0 18px rgba(20,5,60,0.95))
                    drop-shadow(0 0 35px rgba(20,5,60,0.80))
                    drop-shadow(0 2px 6px rgba(0,0,0,0.7));
@@ -220,7 +250,6 @@ HTML_TEMPLATE = """
 
         .hero-subtitle {
             font-size:clamp(0.9rem,1.5vw,1.15rem);
-            /* Boosted opacity + luminance so it survives the bright halo */
             color:rgba(230,210,255,1.0);
             font-weight:600; letter-spacing:0.5px;
             margin-bottom:0;
@@ -231,15 +260,6 @@ HTML_TEMPLATE = """
                 0 0 50px rgba(6,182,212,0.25);
         }
 
-        /* ================================================================
-           BLACK HOLE SCENE  — Estación MTR-01
-           Three-layer volumetric system:
-             L1  · Singularity     — pure black core
-             L2  · Accretion disc  — deformed ellipse in perspective
-             L3  · Gravitational lens — asymmetric posterior halo
-        ================================================================ */
-
-        /* ---- Wrapper & container ---- */
         .bh-wrapper {
             position:relative; z-index:3;
             display:flex; align-items:flex-start; justify-content:center;
@@ -257,16 +277,8 @@ HTML_TEMPLATE = """
             flex-shrink:0;
         }
 
-        /* ================================================================
-           LAYER 3 — Gravitational Lens Posterior (ambient volume)
-           Wide nebular glow behind the singularity.
-           Asymmetric: thicker/brighter on the upper corona, thinner below.
-        ================================================================ */
-
-        /* Outer nebula — ultra-wide radial spread */
         .bh-outer-nebula {
             position:absolute;
-            /* Extend far beyond container so glow floods behind the data panel */
             top:-60%; left:-55%; right:-55%; bottom:-35%;
             border-radius:50%;
             background:
@@ -283,13 +295,11 @@ HTML_TEMPLATE = """
             animation:halouPulse 6s ease-in-out infinite;
         }
 
-        /* Upper corona — heavier accumulation above the event horizon */
         .bh-corona-top {
             position:absolute;
             top:-55%; left:-30%; right:-30%;
             height:80%;
             border-radius:50%;
-            /* Bright white core → vivid violet → midnight blue edge */
             background:
                 radial-gradient(ellipse 70% 60% at 50% 78%,
                     rgba(255,255,255,0.55)   0%,
@@ -305,25 +315,21 @@ HTML_TEMPLATE = """
             animation:halouPulse 6s ease-in-out infinite 0.8s;
         }
 
-        /* Inner photon halo — tight bright ring hugging the event horizon */
         .bh-photon-ring {
             position:absolute; inset:5%; border-radius:50%;
             background:transparent;
-            /* Stacked box-shadows for multi-layer glowing ring */
             box-shadow:
                 0 0  8px  3px rgba(255,245,255,0.90),
                 0 0 20px  8px rgba(240,180,255,0.70),
                 0 0 45px 18px rgba(200,90,255,0.50),
                 0 0 90px 40px rgba(160,50,255,0.28),
                 0 0 160px 80px rgba(120,20,240,0.14),
-                /* Slight upward bias — more light on top */
                 0 -12px 60px 30px rgba(200,100,255,0.22),
                 inset 0 0 30px 10px rgba(220,150,255,0.18);
             z-index:9; pointer-events:none;
             animation:photonPulse 4s ease-in-out infinite;
         }
 
-        /* Bottom integration glow — bleeds into the data panel below */
         .bh-bottom-glow {
             position:absolute; bottom:-30%; left:-40%; right:-40%;
             height:90%;
@@ -336,51 +342,32 @@ HTML_TEMPLATE = """
             z-index:0; pointer-events:none;
         }
 
-        /* ================================================================
-           LAYER 1 — Singularity (Event Horizon Core)
-           Pure black circle. Hard edge = light trapped by gravity.
-           No solid border — the sharp cutoff IS the boundary.
-        ================================================================ */
         .bh-disc {
             position:absolute; inset:10%; border-radius:50%;
             background:#000000;
             border:none;
-            /* Subtle inward shadow gives very slight volumetric depth */
             box-shadow:
                 inset 0 0 40px 15px rgba(60,10,140,0.18),
                 inset 0 0 80px 35px rgba(0,0,0,0.6);
             z-index:10; pointer-events:none;
         }
 
-        /* ================================================================
-           LAYER 2 — Accretion Disc (Deformed Ellipse in 3-D Perspective)
-           Simulates ~15-20° tilt angle. Light wraps around the singularity:
-             • Rear arc  — thin band visible above/behind the core (::before)
-             • Front arc — bright ellipse crossing the lower half (::after)
-           No straight horizontal line — all geometry is curved.
-        ================================================================ */
-
-        /* Container for the two disc arcs */
         .bh-disc-ring {
             position:absolute;
-            /* Centre the ring on the BH container */
             top:50%; left:50%;
             width:105%; height:34%;
             transform:translate(-50%, -20%) rotateX(0deg);
             z-index:11; pointer-events:none;
         }
 
-        /* ── Rear arc (passes behind the singularity, visible at top) ── */
         .bh-disc-ring::before {
             content:'';
             position:absolute;
             top:0; left:0; right:0;
             height:100%;
             border-radius:50%;
-            /* Thin ellipse border — only top half visible (bottom masked by disc) */
             border:3px solid transparent;
             border-top:3px solid rgba(180,100,255,0.0);
-            /* We fake the rear arc with a gradient oval */
             background:
                 radial-gradient(ellipse 100% 38% at 50% 0%,
                     rgba(255,255,255,0.28)   0%,
@@ -393,15 +380,12 @@ HTML_TEMPLATE = """
             animation:accPulse 5s ease-in-out infinite;
         }
 
-        /* ── Front arc (bright band crossing the lower half of the disc) ── */
         .bh-disc-ring::after {
             content:'';
             position:absolute;
-            /* Positioned to intersect the lower portion of the singularity */
             bottom:-18%; left:-4%; right:-4%;
             height:68%;
             border-radius:50%;
-            /* White-hot centre → electric violet → transparent edges */
             background:
                 radial-gradient(ellipse 60% 45% at 50% 14%,
                     rgba(255,255,255,1.00)   0%,
@@ -413,7 +397,6 @@ HTML_TEMPLATE = """
                     rgba(120,40,240,0.15)    44%,
                     rgba(80,15,200,0.05)     58%,
                     transparent              72%),
-                /* Left-side fade */
                 linear-gradient(90deg,
                     transparent              0%,
                     rgba(147,51,234,0.12)   12%,
@@ -425,11 +408,10 @@ HTML_TEMPLATE = """
             animation:accPulse 5s ease-in-out infinite 0.4s;
         }
 
-        /* ===== ENTRAR button — always on top of all effects ===== */
         .bh-enter-btn {
             position:absolute; top:50%; left:50%;
             transform:translate(-50%, -50%);
-            z-index:50; /* Well above all BH layers */
+            z-index:50;
             font-family:'JetBrains Mono',monospace;
             font-size:10px; letter-spacing:6px; text-transform:uppercase;
             color:rgba(220,200,255,0.75);
@@ -447,7 +429,6 @@ HTML_TEMPLATE = """
             box-shadow:0 0 30px rgba(205,80,255,0.45);
         }
 
-        /* ---- Thin orbital arcs ---- */
         .orbit-arc {
             position:absolute; border-radius:50%;
             border:1.5px solid transparent; pointer-events:none;
@@ -467,7 +448,6 @@ HTML_TEMPLATE = """
             filter:drop-shadow(0 0 6px rgba(6,215,255,0.32)); z-index:1;
         }
 
-        /* ---- Floating particles ---- */
         .bh-particle {
             position:absolute; border-radius:50%;
             background:white; z-index:3; pointer-events:none;
@@ -477,7 +457,6 @@ HTML_TEMPLATE = """
         .bh-particle.p3 { width:2px;height:2px; background:#00e5ff; box-shadow:0 0 10px 2px #00e5ff; animation:orbPart 12s linear infinite -6s; }
         .bh-particle.p4 { width:3px;height:3px; background:#ce93d8; box-shadow:0 0 12px 3px #ce93d8; animation:orbPart 8s linear infinite -1.5s; }
 
-        /* ---- Keyframes ---- */
         @keyframes arcSpin    { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
         @keyframes accPulse   { 0%,100%{opacity:0.80} 50%{opacity:1.0} }
         @keyframes halouPulse { 0%,100%{opacity:0.60} 50%{opacity:1.0} }
@@ -509,11 +488,10 @@ HTML_TEMPLATE = """
             to{transform:rotate(360deg) translateX(calc(50% + 60px)) rotate(-360deg)}
         }
 
-        /* ---- Calendar preview panel (like the app UI in Reflect) ---- */
         .hero-preview {
             position:relative; z-index:4;
             width:100%; display:flex; justify-content:center;
-            margin-top:-clamp(30px,5vh,60px); /* overlaps with the black hole glow */
+            margin-top:-clamp(30px,5vh,60px);
             padding-bottom:0;
             pointer-events:auto;
         }
@@ -554,7 +532,6 @@ HTML_TEMPLATE = """
         }
         @keyframes liveDot{0%,100%{opacity:1}50%{opacity:0.3}}
 
-        /* Mini calendar in preview panel */
         .mini-cal { display:flex; gap:20px; align-items:flex-start; }
 
         .mini-cal-section { flex:1; }
@@ -587,7 +564,6 @@ HTML_TEMPLATE = """
         }
         .mc-day.dim { opacity:0.2; }
 
-        /* Sensor preview list */
         .sensor-preview { flex:0 0 auto; min-width:160px; }
         .sp-row {
             display:flex; justify-content:space-between; align-items:center;
@@ -597,7 +573,6 @@ HTML_TEMPLATE = """
         .sp-label { color:var(--text-dim); font-family:'JetBrains Mono',monospace; letter-spacing:0.5px; }
         .sp-val { font-family:'JetBrains Mono',monospace; font-weight:700; font-size:12px; }
 
-        /* ========== TOP NAV ========== */
         .top-nav {
             position:fixed; top:0;left:0;right:0; height:68px;
             display:flex; align-items:center; justify-content:space-between;
@@ -616,7 +591,6 @@ HTML_TEMPLATE = """
         .nav-pill.active{color:var(--text);background:rgba(139,92,246,0.12)}
         .nav-pill.active::after{content:'';position:absolute;bottom:5px;left:20%;right:20%;height:2px;border-radius:1px;background:var(--violet);box-shadow:0 0 8px var(--violet)}
 
-        /* ========== DASHBOARD ========== */
         #dashboard {
             min-height:100vh; padding-top:90px;
             display:flex; flex-direction:column; align-items:center;
@@ -648,7 +622,6 @@ HTML_TEMPLATE = """
         .gauge-glow{position:absolute;inset:-12px;border-radius:50%;opacity:0;transition:opacity 0.4s;pointer-events:none;filter:blur(20px)}
         .gauge-item:hover .gauge-glow{opacity:0.2}
 
-        /* ========== MODAL ========== */
         #preview-modal{position:fixed;inset:0;background:rgba(2,0,15,0.75);backdrop-filter:blur(16px);z-index:500;display:flex;align-items:center;justify-content:center;opacity:0;pointer-events:none;transition:opacity 0.3s ease}
         #preview-modal.active{opacity:1;pointer-events:auto}
         .modal-card{background:rgba(8,4,28,0.9);backdrop-filter:blur(30px);border:1px solid var(--border-bright);border-radius:28px;padding:44px;width:90%;max-width:720px;display:grid;grid-template-columns:1fr 1fr;gap:44px;transform:scale(0.88) translateY(10px);transition:transform 0.35s cubic-bezier(0.16,1,0.3,1);position:relative;box-shadow:0 0 60px rgba(139,92,246,0.15),0 40px 80px rgba(0,0,0,0.5)}
@@ -667,7 +640,6 @@ HTML_TEMPLATE = """
         .modal-close{position:absolute;top:18px;right:22px;background:rgba(139,92,246,0.1);border:1px solid rgba(139,92,246,0.2);color:var(--text-dim);font-size:18px;cursor:pointer;transition:all 0.3s;width:36px;height:36px;display:flex;align-items:center;justify-content:center;border-radius:50%}
         .modal-close:hover{color:var(--text);background:rgba(139,92,246,0.2);border-color:var(--violet)}
 
-        /* ========== ANALYTICS ========== */
         #analytics-page{position:fixed;inset:0;background:radial-gradient(ellipse 80% 50% at 10% 10%,rgba(80,20,160,0.15) 0%,transparent 55%),radial-gradient(ellipse 60% 60% at 90% 30%,rgba(50,10,130,0.12) 0%,transparent 55%),var(--bg-mid);z-index:200;overflow-y:auto;opacity:0;pointer-events:none;transition:opacity 0.4s ease}
         #analytics-page.active{opacity:1;pointer-events:auto}
         .analytics-container{max-width:1100px;margin:0 auto;padding:100px 30px 40px}
@@ -685,7 +657,6 @@ HTML_TEMPLATE = """
         .prediction-bar{width:100%;height:5px;background:rgba(139,92,246,0.12);border-radius:3px;margin-top:12px;overflow:hidden}
         .prediction-fill{height:100%;border-radius:3px;transition:width 0.6s ease}
 
-        /* ========== INFO SECTION ========== */
         #info-section{width:100%;padding:80px 0 0;background:radial-gradient(ellipse 100% 60% at 50% 0%,rgba(90,20,180,0.12) 0%,transparent 55%),linear-gradient(180deg,var(--bg-mid) 0%,#030112 100%);border-top:1px solid var(--border);opacity:0;transition:opacity 0.7s ease}
         #info-section.visible{opacity:1}
         .info-container{max-width:1100px;margin:0 auto;padding:0 40px 80px}
@@ -720,7 +691,6 @@ HTML_TEMPLATE = """
         .footer{background:rgba(4,2,14,0.95);border-top:1px solid var(--border);padding:28px 40px;text-align:center}
         .footer-text{font-family:'JetBrains Mono',monospace;font-size:11px;color:rgba(139,92,246,0.4);letter-spacing:2px}
 
-        /* ========== RESPONSIVE ========== */
         @media(max-width:768px){
             .bh-container{width:320px;height:320px}
             .hero-preview{margin-top:-40px}
@@ -742,50 +712,40 @@ HTML_TEMPLATE = """
 </head>
 <body>
 
-<!-- PORTAL SCREEN -->
 <div id="portal-screen">
     <div class="portal-bg"></div>
     <canvas id="starCanvas"></canvas>
 
-    <!-- Hero text - ABOVE the black hole like Reflect -->
     <div class="hero-text-block">
         <div class="hero-badge">&#9889; Monitoreo en Tiempo Real</div>
         <h1 class="hero-title">Estaci&#243;n Meteorol&#243;gica<br>MTR-01</h1>
         <p class="hero-subtitle">I.E.S.T.P. Honorio Delgado Espinoza &middot; Arequipa, Per&#250;</p>
     </div>
 
-    <!-- Black hole scene -->
     <div class="bh-wrapper">
         <div class="bh-container">
-            <!-- Layer 3: Gravitational lens / posterior halo (bottom-most, renders behind) -->
             <div class="bh-bottom-glow"></div>
             <div class="bh-outer-nebula"></div>
             <div class="bh-corona-top"></div>
 
-            <!-- Thin orbital arcs -->
             <div class="orbit-arc a1"></div>
             <div class="orbit-arc a2"></div>
 
-            <!-- Layer 3 (inner): Photon ring hugging the event horizon -->
             <div class="bh-photon-ring"></div>
 
-            <!-- Layer 1: Singularity — pure black core -->
             <div class="bh-disc"></div>
 
-            <!-- Layer 2: Accretion disc — deformed tilted ellipse (rear + front arcs via ::before / ::after) -->
             <div class="bh-disc-ring"></div>
 
-            <!-- ENTRAR button — z-index:50 ensures full visibility & interaction -->
             <button class="bh-enter-btn" onclick="enterDashboard()">ENTRAR</button>
 
-            <!-- Floating orbital particles -->
             <div class="bh-particle p1"></div>
             <div class="bh-particle p2"></div>
             <div class="bh-particle p3"></div>
             <div class="bh-particle p4"></div>
         </div>
     </div>
-    <!-- Preview panel (calendar + sensor snapshot) - overlaps the glow like Reflect's UI preview -->
+
     <div class="hero-preview" style="margin-top:clamp(-50px,-6vh,-20px);">
         <div class="preview-panel">
             <div class="preview-panel-header">
@@ -811,7 +771,6 @@ HTML_TEMPLATE = """
     </div>
 </div>
 
-<!-- TOP NAV -->
 <nav class="top-nav" id="topNav">
     <div class="nav-logo"><div class="nav-logo-dot"></div>MTR-01</div>
     <div class="nav-pills">
@@ -824,7 +783,6 @@ HTML_TEMPLATE = """
     </div>
 </nav>
 
-<!-- MAIN DASHBOARD -->
 <div id="dashboard">
     <div class="dashboard-header">
         <div class="section-title-sm">Panel de Control</div>
@@ -834,7 +792,6 @@ HTML_TEMPLATE = """
     </div>
     <div class="gauges-container" id="gaugesContainer"></div>
 
-    <!-- INFO SECTION -->
     <div id="info-section">
         <div class="info-container">
             <div style="margin-bottom:60px">
@@ -880,7 +837,6 @@ HTML_TEMPLATE = """
     </div>
 </div>
 
-<!-- MODAL -->
 <div id="preview-modal" onclick="closeModal(event)">
     <div class="modal-card" onclick="event.stopPropagation()">
         <button class="modal-close" onclick="closeModal()">&#10005;</button>
@@ -897,7 +853,6 @@ HTML_TEMPLATE = """
     </div>
 </div>
 
-<!-- ANALYTICS PAGE -->
 <div id="analytics-page">
     <div class="analytics-container">
         <button class="back-link" onclick="closeAnalytics()"><span>&#8592;</span> VOLVER AL INICIO</button>
@@ -915,7 +870,6 @@ HTML_TEMPLATE = """
 </div>
 
 <script>
-    // ===== STARS =====
     (function(){
         const c = document.getElementById('starCanvas');
         const ctx = c.getContext('2d');
@@ -941,7 +895,6 @@ HTML_TEMPLATE = """
         drawStars();
     })();
 
-    // ===== CALENDAR =====
     (function buildCal(){
         const now = new Date();
         const year=now.getFullYear(), month=now.getMonth(), today=now.getDate();
@@ -965,7 +918,6 @@ HTML_TEMPLATE = """
         for(let d=1;d<=daysInMonth;d++){ const el=document.createElement('div'); el.className='mc-day'+(d===today?' today':''); el.textContent=d; grid.appendChild(el); }
     })();
 
-    // ===== METRICS =====
     const metrics = {
         temperatura:{color:'var(--temp)',hex:'#ef4444',unit:'\u00b0C',label:'Temperatura',min:-10,max:50},
         humedad:{color:'var(--hum)',hex:'#06b6d4',unit:'%',label:'Humedad',min:0,max:100},
@@ -1023,7 +975,6 @@ HTML_TEMPLATE = """
             });
             if(activeModalKey){
                 updateModal();
-                // Actualizar sparkline del modal en tiempo real
                 if(sparkChartInst){
                     sparkChartInst.data.datasets[0].data = sparkData[activeModalKey];
                     sparkChartInst.data.labels = sparkData[activeModalKey].map((_,i)=>i);
@@ -1062,18 +1013,15 @@ HTML_TEMPLATE = """
         if(!activeModalKey)return;
         const key=activeModalKey, val=currentData[key], logic=getLogic(key,val), m=metrics[key];
 
-        // Actualizar valor numérico grande del modal con animación suave
         const valEl = document.getElementById('modal-gauge-value');
         if(valEl) animateNumber(valEl, parseFloat(valEl.innerText)||0, val, 800, 1);
 
-        // Actualizar círculo de progreso del modal
         const circ=2*Math.PI*85;
         let pct=Math.max(0,Math.min(1,(val-m.min)/(m.max-m.min)));
         const offset=circ-(pct*circ);
         const circle=document.getElementById('modal-fill-circle');
         if(circle) circle.style.strokeDashoffset=offset;
 
-        // Actualizar estado y recomendaciones
         document.getElementById('modalStatus').innerText=logic.s;
         document.getElementById('modalStatus').style.color=m.hex;
         const ul=document.getElementById('modalRecs');
@@ -1138,7 +1086,6 @@ HTML_TEMPLATE = """
 </script>
 </body>
 </html>
-
 """
 
 def fix_surrogates(text):
@@ -1164,5 +1111,10 @@ def index():
     return fix_surrogates(html)
 
 if __name__ == '__main__':
-    print("MTR-01 Server -> http://127.0.0.1:5000")
-    app.run(debug=True, port=5000, host='0.0.0.0')
+    print("=" * 50)
+    print("  MTR-01 Servidor Meteorológico")
+    print("  Escuchando en: http://0.0.0.0:5000")
+    print("  Endpoint ESP32: POST /api/sensor-data")
+    print("  Verificar:     GET  /api/status")
+    print("=" * 50)
+    app.run(debug=False, port=5000, host='0.0.0.0')
