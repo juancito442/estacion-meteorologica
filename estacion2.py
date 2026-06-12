@@ -787,7 +787,7 @@ HTML_TEMPLATE = """
     <div class="dashboard-header">
         <div class="section-title-sm">Panel de Control</div>
         <div class="dashboard-title">Mediciones en Vivo</div>
-        <div class="dashboard-sub">Actualizaci&#243;n cada 2 segundos</div>
+        <div class="dashboard-sub">Actualizaci&#243;n cada 0.5 segundos</div>
         <div class="live-indicator"><div class="live-dot"></div><span class="live-text">EN VIVO</span></div>
     </div>
     <div class="gauges-container" id="gaugesContainer"></div>
@@ -1082,7 +1082,7 @@ HTML_TEMPLATE = """
         mainChartInst=new Chart(ctx,{type:'line',data:{labels:['Lun','Mar','Mi\u00e9','Jue','Vie','S\u00e1b','Hoy'],datasets:[{label:m.label,data:data7,borderColor:m.hex,backgroundColor:grad,borderWidth:2.5,tension:0.4,fill:true,pointBackgroundColor:'#04020e',pointBorderColor:m.hex,pointBorderWidth:2,pointRadius:5,pointHoverRadius:8}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{backgroundColor:'rgba(4,2,20,0.95)',titleColor:'#fff',bodyColor:'#fff',borderColor:m.hex,borderWidth:1,padding:12,displayColors:false}},scales:{x:{grid:{color:'rgba(139,92,246,0.06)'},ticks:{color:'#9d8fc9',font:{family:'JetBrains Mono'}}},y:{grid:{color:'rgba(139,92,246,0.06)'},ticks:{color:'#9d8fc9',font:{family:'JetBrains Mono'}}}},interaction:{intersect:false,mode:'index'}}});
     }
 
-    setInterval(fetchData,2000);
+    setInterval(fetchData,500);
 </script>
 </body>
 </html>
@@ -1113,7 +1113,7 @@ def index():
 if __name__ == '__main__':
     print("=" * 50)
     print("  MTR-01 Servidor Meteorológico")
-    print("  Escuchando en: http://0.0.0.0:5000")
+    print("  Escuchando en: http://0.0.0.0: 5000")
     print("  Endpoint ESP32: POST /api/sensor-data")
     print("  Verificar:     GET  /api/status")
     print("=" * 50)
